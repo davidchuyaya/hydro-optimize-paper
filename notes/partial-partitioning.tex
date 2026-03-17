@@ -1,0 +1,41 @@
+\documentclass{article}
+
+\title{Partial Partitioning}
+\date{}
+\author{}
+
+\begin{document}
+\maketitle
+
+\section{Mechanism}
+Central to the halt-free implementation of partial partitioning is the idea of a logical clock for each partially-partitioned cluster, and when combined with the logical clocks of other clusters, a vector clock for the entire system.
+These clocks are incremented by the coordinator of partitioned cluster and attached to every message.
+
+\begin{enumerate}
+  \item On the partitioned node, divide relations into partitionable and replicated. Any non-EDB relation that can't be partitioned (by the definition of the original paper) is labeled replicated.
+  \item Any rule that has a replicated relation at the head has all relations in its body labeled replicated as well.
+  \item All machines maintain a vector clock, one slot for each partitioned cluster.
+  \item Upon receiving a message with a vector clock, non-partially partitioned machines update their own vector clock by taking the max of each slot.
+  \item All machines attach their vector clock to all messages.
+  \item Create a coordinator node (can be co-located with a partition).
+    \begin{enumerate}
+      \item Senders route all replicated inputs to the coordinator.
+      \item When it receives an input tuple, it increments its cluster's slot in the vector clock and broadcasts to all partitions.
+    \end{enumerate}
+  \item Modify partitions:
+    \begin{enumerate}
+      \item It delays processing messages from senders until its cluster's slot in the vector clock is at least as high.
+      \item It processes messages from the coordinator in incremental order, buffering until it receives the next message in the sequence.
+    \end{enumerate}
+\end{enumerate}
+
+\section{Proof Sketch}
+Original proof: Create a mapping function from the new partitioned states to the original, from a new $t'$ (on each of the partitions) to the original $t$, where $t' \ge t$ (so messages sent by the new nodes are delivered at a time they could've been delivered originally).
+
+New proof: Shift times around based on the logical clock on each machine so that all states with a higher logical clock happen-after all states with a lower one.
+Prove that this can be done consistently across all partitioned clusters.
+Prove that there are no messages sent back in time as a result.
+
+
+
+\end{document}
