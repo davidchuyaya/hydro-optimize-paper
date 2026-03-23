@@ -1,0 +1,25 @@
+@article{abd,
+author = {Attiya, Hagit and Bar-Noy, Amotz and Dolev, Danny},
+title = {Sharing memory robustly in message-passing systems},
+year = {1995},
+issue_date = {Jan. 1995},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+volume = {42},
+number = {1},
+issn = {0004-5411},
+url = {https://doi.org/10.1145/200836.200869},
+doi = {10.1145/200836.200869},
+journal = {J. ACM},
+month = jan,
+pages = {124–142},
+numpages = {19},
+}
+
+@article{caspaxos,
+  title={Caspaxos: Replicated state machines without logs},
+  author={Rystsov, Denis},
+  journal={arXiv preprint arXiv:1802.07000},
+  year={2018}
+}
+The classic algorithms also assume that the read value doesn't have to be committed, since they don't implement compare-and-swap, so they allow reading an uncommitted value, attempting to recommit it, and returning that value if the recommit fails.

@@ -1,0 +1,42 @@
+
+\documentclass{article}
+
+\usepackage{hyperref}
+
+\title{Parallel Compare-and-Swap}
+\date{}
+\author{}
+
+\begin{document}
+\maketitle
+
+\section{Problem}
+We will evaluate against a chain replication protocol that uses an atomic register to implement reconfiguration.
+States to this register contain a version number; it can only be committed if the version number is exactly the previous one + 1.
+
+The classic distributed shared register algorithms (ABD~\cite{abd} and its variants) assume that the read value doesn't have to be committed, since they don't implement compare-and-swap, so they allow reading an uncommitted value, attempting to recommit it, and returning that value if the recommit fails.
+Distributed CAS~\cite{caspaxos} assumes sequential processing of messages.
+Hydro encourages batch processing, which requires careful thinking about what can be parallelized.
+
+Our goal is to allow reads to proceed in parallel and minimize changes to the protocol otherwise; our changes should be obviously correct, and more heavy-weight changes should be left to the optimizer.
+
+\section{Algorithm Sketch}
+\begin{enumerate}
+  \item Reads proceed in parallel without a ballot, as in ABD. They are broadcasted to all replicas, wait for a majority, and if everyone agrees on the value, returned to the client.
+  \item If replicas disagree, the highest-ballot value must be reconciled (by committing the previous write) before the read returns whatever the majority ultimately agrees on. This might not be the reconciled value, if this node loses election.
+  \item Writes proceed sequentially. During election, a new ballot is chosen, broadcast to all replicas, and the previous value read from the majority.
+  \item If the majority disagree, the ballot is used to commit the highest-ballot value.
+  \item Once the majority respond and agree, the write is committed if the CAS condition is met, and rejected otherwise.
+\end{enumerate}
+
+Question: When multiple parallel reads fail, what value do we use to reconcile?
+Can the reconciled values break the CAS condition, based on the order we reconcile?
+
+Proposal: Each failed read knows the highest-ballot value. It should attempt to reconcile with that value \emph{if no other value with a higher ballot has been committed before}.
+If a value with a higher ballot has been committed, the commit must have happened after the read, so the read can just return that value.
+
+
+\bibliographystyle{plainurl}
+\bibliography{refs}
+
+\end{document}
