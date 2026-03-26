@@ -1,0 +1,96 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+
+\title{Time Partitioning}
+\date{}
+\author{}
+
+\begin{document}
+\maketitle
+
+\section{Problem statement}
+Paxos's main bottleneck is the leader.
+Decoupling, via Michael's methods, reduces the Paxos leader to a sequencer, broadcaster, and quorum collector.
+The broadcaster and quorum collection can be trivially partitioned; the sequencer cannot be partitioned and must process every message.
+In Michael's paper, because Paxos also includes replicas, which processes the committed log in sequence, the replicas end up becoming the bottleneck.
+This is kind of a distraction: the most scalable variants of Paxos treat it as a log replication (rather than state machine replication) protocol and don't include replicas; in that case, the sequencer becomes the new bottleneck.
+
+Ultimately, removing the bottleneck from Paxos requires partitioning the sequencer.
+Time partitioning achieves this.
+
+\section{Intuition}
+\subsection{Time partitioning for Paxos}
+Assuming the Paxos leader remains stable (the max ballot does not change often), all the sequencer does is assign each incoming payload a monotonically increasing sequence number.
+The actual sequence number assigned is arbitrary, based on the order of message delivery.
+Theoretically, the sequencer could therefore be partitioned so each partition is in charge of a hash subset of sequence numberes: given $N$ partitions, partition 0 will hand out any numbers $x \equiv 0 \mod N$, partition 1 will hand out any numbers $x \equiv 1 \mod N$, and so on.
+
+\subsection{Time partitioning for any protocol}
+Although we discuss this partitioning in terms of sequence numbers in Paxos, that is incompatible with how partitioning is implemented.
+The implementation of partitioning requires selecting a particular attribute of each relation to determine the destination partition; however, when inputs arrive at the sequencer, they do not yet have a sequence number, so it is unclear where the input should be sent.
+Furthermore, this partitioning is useful even if there is no obvious attribute (such a sequence number) to partition on; consider the case where the sequence number, instead of being incremented, is summed with the previous sequence number.
+
+What is being partitioned is \emph{time}; at each logical time, if the sequencer receives exactly 1 client input message, then the sequence number will advance by 1.
+Each of the $N$ partitions then calculates the next sequence number by anticipating $N$ additional inputs that then arrive, one per logical tick, and executing those ticks (and producing no outputs), then processing the next input $N$ ticks later.
+
+Assuming the client will send messages forever, client messages can be round-robin (or randomly) partitioned across the partitions, but if the client will only send a finite number of messages, then the partitions will need to anticipate future ticks that never occur.
+
+This is solved with \texttt{AtLeastOnce} streams in Hydro, which allow network message duplication.
+Partitions can hold onto the first input that they receive and periodically gossip the largest logical tick they have processed.
+Partitions that have fallen behind significantly due to a drought of inputs can be fed artificially duplicated messages.
+
+The last issue that must be addressed is causality.
+A client that sends a message, which is processed at logical time $t$, will expect time to increase monotonically, such that its next message is processed at some $t'$ where $t' > t$.
+We can address this by attaching a logical clock to each message, and buffering inputs at the partitions until the logical clocks are sufficiently high, similar to the mechanism for partial partitioning.
+
+
+\section{Mechanism}
+Similar to partial partitioning, each partition maintains a logical clock $C_p$, forming a vector clock for the entire system.
+These logical clocks are incremented by partitions.
+
+If the partitions are also partially partitioned, the coordinator separately tracks a logical clock $C_c$ that is incremented whenever the replicated value is changed, forming a lexicographically ordered clock $<C_c, C_p>$.
+
+\subsection{Time partitioning}
+Time partitioning is possible if the state of the system at time $t+1$ is a function of the state of the system at time $t$, regardless of input values.
+
+Slightly more formally, let the \textbf{sequential facts} of a relation $r$ at time $t$ be all facts that can be derived by executing a sequential rule at time $t-1$.
+Let any pair of histories $H_1, H_2$ be \textbf{input cardinality equal} if for all times $t$, $H_1$ and $H_2$ have the same number of facts in each input relation.
+A relation $r$ is \textbf{input-sequential independent} if for all pairs of input cardinality equal histories, for all times, $r$ has the same sequential facts in both histories.
+Time partitioning is possible for component $C$ if all relations in $C$ are input-sequential independent.
+
+\begin{enumerate}
+  \item All machines maintain a vector clock, which includes a row for this partitioned component.
+  \item All machines attach the vector clock to all messages they send.
+  \item Upon receiving a message with a vector clock, non-partitioned machines update their own vector clock by taking the elementwise maximum of their own clock and the received clock.
+  \item Modify machines that send to the partitioned component:
+    \begin{enumerate}
+      \item Randomly select a partition to send the message to. (Best for liveness given an unknown number of other senders)
+    \end{enumerate}
+  \item Partition the component:
+    \begin{enumerate}
+      \item Let $C_p$ be the row in the vector clock that represents the partition's logical clock.
+      \item After processing an input, each partition increments its own $C_p$ by $N$, where $N$ is the number of partitions.
+      \item When a partition receives a message with $C_p$ higher than its own value, it buffers the message until its own $C_p$ is sufficiently high.
+      \item Upon receiving the 1st input, keep it in memory.
+      \item Periodically gossip the largest $C_p$ that has been processed to all other partitions. The 1st gossip should include its stored input.
+      \item If its own $C_p$ is significantly behind the largest $C_p$ that has been processed, catch up by processing its stored input until its own $C_p$ is sufficiently high.
+    \end{enumerate}
+\end{enumerate}
+
+\subsection{Partial time partitioning}
+Partial time partitioning is necessary if the state of the system at time $t+1$ may depend on input values that have arrived at time $t$.
+We will split inputs into \textbf{replicated} and \textbf{partitioned} inputs, where relations $r$ in component $C$ are input-sequential independent on the partitioned inputs.
+
+There is a more fine-grained definition (replicated inputs may only break sequential independence with certain input values) but we will keep things simple for now.
+In Paxos, inputs that change the ballot number are replicated, while client inputs can be time-partitioned.
+
+The mechanism is a combination of that of partial partitioning and time partitioning.
+
+
+\section{Proof Sketch}
+Prove that whatever property we use to find input-sequential independent relations is safe.
+Prove that the state of input-sequential independent relations at time $t$ is a function of the state of the system at time $t-1$, regardless of input values.
+The remainder of the proof is the same as the proof for partial partitioning.
+
+
+\end{document}
