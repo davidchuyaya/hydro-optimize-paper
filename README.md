@@ -3,7 +3,7 @@
 ## Installation for local compilation
 These instructions are for MacOS only, assuming HomeBrew has been installed.
 ```shell
-brew install tectonic biber skim
+brew install tectonic biber skim font-libertinus
 ```
 
 Further skim setup can be found [here](https://ejmastnak.com/tutorials/vim-latex/pdf-reader/#skim).

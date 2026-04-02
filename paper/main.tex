@@ -1,0 +1,45 @@
+% This Latex template file set ups a two column paper with several
+% options. 
+% The ACM option (to be set inside preamble.sty)
+% The Usenix option (to be set inside preamble.sty)
+% It also implements (as options) space saving and commenting options
+% (also in preamble.sty)
+
+% When using Usenix, choose this: 
+% \documentclass[letterpaper,twocolumn,10pt]{article}
+% When using ACM, choose this
+%% Non-technical report
+\documentclass[sigplan]{acmart}
+%% Technical report
+% \documentclass[nonacm,acmsmall]{acmart}
+
+\usepackage{preamble}
+
+% \makeatletter
+% \gdef\@copyrightpermission{
+%   \begin{minipage}{0.2\columnwidth}
+%    \href{https://creativecommons.org/licenses/by/4.0/}{\includegraphics[width=0.90\textwidth]{assets/4ACM-CC-by-88x31.pdf}}
+%   \end{minipage}\hfill
+%   \begin{minipage}{0.8\columnwidth}
+%    \href{https://creativecommons.org/licenses/by/4.0/}{This work is licensed under a Creative Commons Attribution International 4.0 License.}
+%   \end{minipage}
+%   \vspace{5pt}
+% }
+% \makeatother
+
+\begin{document}
+\title{\sys{}}
+
+\author{}
+% \renewcommand{\shortauthors}{David Chu McElroy et al.}
+
+\maketitle
+
+\input{1-intro}
+
+\bibliographystyle{ACM-Reference-Format}
+{\footnotesize
+\bibliography{refs}
+}
+
+\end{document}

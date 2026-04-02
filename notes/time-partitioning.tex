@@ -93,4 +93,52 @@ Prove that the state of input-sequential independent relations at time $t$ is a 
 The remainder of the proof is the same as the proof for partial partitioning.
 
 
+\section{Linearizable time partitioning}
+The partitioning described above is not linearizable, because we need to shift times (the we do in non-blocking partial partitioning) such that the $<$ relation may no longer hold.
+This presents pretty severe downsides; any communication between any clients must now include our vector clock, making composition difficult if there are multiple optimized protocols with multiple vector clocks.
+We also claimed in our SIGMOD paper that linearzabilitly is \emph{the gold standard} for correctness, so we should strive to maintain it.
+
+Intuitively, achieving linearizability requires restricting partitions such that they do not execute any ticks until it can guarantee that no other partition will execute an earlier tick using a newer message (that may happen-after this partition's output).
+
+
+\subsection{Mencius-style time partitioning}
+At the most basic level, Mencius allows the proposer to partition slots across multiple leaders.
+This means that a message might arrive at a leader responsible for a lower slot and result in an execution impossible in regular MultiPaxos (if the leader does not change).
+In order to implement \emph{linearizable} Mencius-style time partitioning, coordination between partitions is necessary.
+
+I'll outline potential approaches below.
+Performance implications require experimentation.
+
+\subsubsection{Pipelined coordination}
+Intuitively, partition 2 should not execute tick 2 until partition 1 tells it that it has executed tick 1.
+Each partition is modified to send a message to the next partition whenever it executes a tick; the partition is otherwise frozen.
+
+Naively implemented, this is worse than not partitioning, equivalent to executing on a single machine and adding $1/2$ RTT message latency between each input message (and therefore each tick).
+
+There are a couple of ways we can potentially optimize this:
+\begin{itemize}
+  \item Dynamically partition ticks so each partition can execute over all messages in its input queue before telling the next partition.
+    Now the latency is not per tick/input message, but per batch.
+  \item Send the tick execution message to the next partition before actually executing that tick; the execution of that tick (or series of ticks, if combined with the optimization above) can then be parallelized.
+    If timed perfectly (the partition finishes executing its batch right as it receives the go-ahead to execute the next batch), then there should be no coordination overhead.
+    However, coordination latency increases with the number of partitions (processing the next tick requires first waiting for \emph{each} partition to forward a message to the next partition), ultimately limiting scalability.
+\end{itemize}
+
+
+\subsection{Scalog-style time partitioning}
+Scalog uses a central Paxos instance to assign global slots after a scalable, partitioned set of (essentially) Paxos instances assigns local slots.
+The partitioned instances only mark messages as committed after receiving a global slot.
+This means that no message can be committed, processed, and sent back and receive a lower slot.
+Intuitively, this is because any commit and re-proposed message must be separated by a round of global coordination; the commit and re-proposal messages can be separartely linearized to their respective points of global coordination.
+
+The implementation is as follows:
+\begin{enumerate}
+  \item A timeout is set on each partition; after the timeout, the partition sends the number of inputs that it has received to the central coordinator.
+  \item The coordinator waits for all partitions, then assigns a series of ticks to each partition based on the number of inputs it has received.
+  \item Each partition executes the ticks assigned to it on the existing batch of messages. Note that this also means that we are not limited to 1 message per batch (each partition can emulate the previous tick by executing it with whatever variable number of messages were in the previous tick).
+\end{enumerate}
+
+Note that this is not entirely faithful to Scalog, since no replication is happening during coordination; during the 1st coordination, all progress is halted, and afterwards, execution is pipelined.
+
+
 \end{document}
