@@ -6,15 +6,38 @@ Contributions:
   \item Evaluating optimizations on AWS protocols
   \item Hydro: Generalized decoupling with explicit ticked/sliced regions
   \item Partitions operating at independent times: non-blocking partial partitioning, time-based partitioning. Non-blocking partial partitioning is only possible if we no longer need to prove linearizability (may raise eyebrows).
-  \item Generalizing techniques from Mencius and Scalog. (Not sure how to do Mencius without breaking linearizability...)
+  \item Generalizing techniques from Mencius and Scalog.
   \item ILP formulation of optimizations
 \end{itemize}
 
-Pitches and corresponding paper outlines:
+Pitches (as subsection titles) and corresponding paper outlines:
 
-\subsection{}
+\subsection{\sys{}: Automatically Optimizing Distributed Protocols by Exploiting the Flexibility of Time}
 
 \begin{enumerate}
   \item Intro
+  \item Background
+    \begin{enumerate}
+      \item Existing optimizations
+      \item Proof technique (observable equivalence, linearizability)
+      \item Limitations (liveness)
+    \end{enumerate}
+  \item \hydro{} and how it differs from Dedalus
+    \begin{enumerate}
+      \item Implicit batching vs explicit ticks
+      \item Stream properties (only if we use it in Mencius-style partitioning?)
+    \end{enumerate}
+  \item Generalizing decoupling with ticked/sliced regions
+  \item Time partitioning
+    \begin{enumerate}
+      \item Generalizing Mencius
+      \item Generalizing Scalog
+    \end{enumerate}
+  \item Implementation
+    \begin{enumerate}
+      \item Network as nodes in the IR
+      \item Finding the optimal plan with ILP, and how we encode it
+    \end{enumerate}
+  \item Evaluation
   \item 
 \end{enumerate}
