@@ -1,43 +1,86 @@
-\section{Introduction}
-
-Contributions:
-\begin{itemize}
-  \item Implemented optimizations in Hydro
-  \item Evaluating optimizations on AWS protocols
-  \item Hydro: Generalized decoupling with explicit ticked/sliced regions
-  \item Partitions operating at independent times: non-blocking partial partitioning, time-based partitioning. Non-blocking partial partitioning is only possible if we no longer need to prove linearizability (may raise eyebrows).
-  \item Generalizing techniques from Mencius and Scalog.
-  \item ILP formulation of optimizations
-\end{itemize}
-
-Pitches (as subsection titles) and corresponding paper outlines:
-
-\subsection{\sys{}: Automatically Optimizing Distributed Protocols by Exploiting the Flexibility of Time}
+\section{Outline}
 
 \begin{enumerate}
   \item Intro
+    \begin{enumerate}
+      \item Distributed protocols are the core of cloud computing.
+      \item They are difficult to optimize correctly due to their complexity.
+        This has 3 downsides: (1) industry opts for simple, suboptimal protocols, (2) the iteration cycle is long because redesigns require new proofs, and (3) it is difficult to combine optimizations.
+      \item Existing works present optimizations but their performance is limited (show Paxos throughput upper bound) because certain nodes cannot be scaled due to their highly synchronous logic.
+      \item Our key insight is that logic is often unnecessarily synchronous, resulting in coincidental joins, co-batching, and sequentiality, and that the key to powerful optimizations is distinguishing between necessary and coincidental synchrony.
+      \item We present \sys{}, a system that automatically optimizes distributed protocols. Programmers write simple protocols, and the optimizer combines known approaches from prior work to find the optimal set of rewrites.
+      \item We generalize the optimizations introduced by Mencius and Scalog by exploiting coincidental joins.
+      \item We generalize the different decoupling techniques by exploiting coincidental co-batching and sequentiality.
+      \item Evaluation
+      \item Limitations (liveness, fault tolerance, general omission model, same as before)
+    \end{enumerate}
   \item Background
     \begin{enumerate}
       \item Existing optimizations
+      \item Theme across optimizations: Show that given the same inputs that arrive at the same times on the new and original prtocols, the new protocol will produce some output that could've been produced before.
       \item Proof technique (observable equivalence, linearizability)
-      \item Limitations (liveness)
     \end{enumerate}
-  \item \hydro{} and how it differs from Dedalus
+  \item The Unnecessarily Strict Semantics of Time
     \begin{enumerate}
-      \item Implicit batching vs explicit ticks
-      \item Stream properties (only if we use it in Mencius-style partitioning?)
+      \item Coincidental joins: The rewrites ensured that values that (1) arrive at the same tick and (2) would have joined in that tick will also join in the new protocol, even though their co-arrival is coincidental. Existing rewrites require that possible joins are not altered (partitioning with co-hashing, partitioning with dependencies).
+      \item Coincidental co-batching: For each tick, different aggregations and negations must operate on the same sets of data, whether preserving the batching is necessary for correctness or not. This means that existing rewrites either do not work if there is negation or aggregation (functional, monotonic decoupling) or require waiting on the same batches (state machine decoupling).
+      \item Coincidental sequentiality: (Non-monotonic) rules that execute in the next must witness (and be blocked on the deduction of) values derived in the previous tick, whether actually seeing that previous value is necessary for correctness or not. Existing rewrites either avoid decoupling or require coordination (asymmetric decoupling).
+      \item Overcoming the Limitations of Time: (introduce later sections)
     \end{enumerate}
-  \item Generalizing decoupling with ticked/sliced regions
-  \item Time partitioning
+  \item Exploiting coincidental joins with Time partitioning
     \begin{enumerate}
-      \item Generalizing Mencius
-      \item Generalizing Scalog
+      \item Overview (start with stateless, derive time partitioning, show that Mencius and Scalog are specific implementations of time partitioning)
+      \item Stateless partitioning: Partitioning (as defined in SIGMOD) required co-hashing on specific attributes because facts with the same values for those attributes join. 
+        The facts that would join are: newly arrived facts (or newly derived facts), and persisted facts.
+        If we know that there are no persisted facts, then there exists a run where no 2 facts coincide (and thus they do not join) and we do not need to co-hash on attributes.
+        This isn't actually a useful rewrite, since it would only apply to a prgram that is trygin to check the (random) co-existence of other inputs.
+      \item Time partitioning: If there \emph{are} persisted facts, but those persisted facts do not depend on the \emph{values} of prior facts (they may depend on their \emph{cardinality}), then each partition can simulate the execution of prior ticks to derive the persisted state at any tick.
+        Combined with stateless partitioning, this means that each partition can be responsible for a subset of the ticks and derive the system state at that tick.
+        However, naively time partitioning introduces 2 problems:
+      \item (1) Ticks that never arrive: A partition may execute a future tick anticipating that some prior number of ticks will execute (on some set of inputs).
+        Those inputs, however, may never arrive.
+        Consider a client that sends a finite number of messages.
+      \item (2) Linearizability: A client may send a message to a partition with a higher tick, receive the output, then send a causally dependent message to a partition with a lower tick, breaking causality (and linearizability).
+      \item Mencius: It time partitions the Paxos leader and permits breaks in linearizability.
+        Although this breaks Paxos semantics locally, it is actually observably equivalent to a run of Paxos where the leader switches and only its later slots are committed.
+        Our optimizations are local and do not understand the intricacies of leader election.
+        We need a way to make sure that a partition that executes a future tick does so only after knowing that all prior ticks will not receive additional messages.
+        The challenge is doing so without essentially processing one tick at a time (which would be the same as not partitioning).
+      \item Pipelined time partitioning: Each partition tells the next partition the cardinality of its message batch before processing the batch.
+        Although partitions have to wait until they get this message, they execute their batches in parallel.
+      \item Broadcast time partitioning: Each partition broadcasts the cardinality of its message batch to all other partitions.
+        A partition that has received the cardinality messages from all other partitions can execute its batch.
+        This is a tradeoff between wait time and message complexity.
+      \item Coordinated time partitioning: Similar to quorum certificates in PBFT, a natural extension of broadcast time partitioning is to have each partition send their cardinalities to a coordinator that broadcasts to each partition.
+        This is (roughly) the approach that Scalog takes.
+      \item Limitations. Mencius and Scalog rely on optimizations specific to consensus; Mencius relies on weakening consistency and Scalog relies on background replication. Our local optimizations are more general but also less performant because they have to maintain linearizability and cannot optimistically replicate (acceptor partitioning is based on slot).
+    \end{enumerate}
+  \item Removing coincidental co-batching and sequentiality with \hydro{}
+    \begin{enumerate}
+      \item Slices (or ticks?)
+      \item Show code snippet
+      \item Subsuming existing decoupling techniques: Show that functional, monotonic, state machine decoupling can all be accomplished (naturally) with slices.
     \end{enumerate}
   \item Implementation
     \begin{enumerate}
-      \item Network as nodes in the IR
-      \item Finding the optimal plan with ILP, and how we encode it
+      \item Optimizer rewrites Hydro IR
+      \item Decoupling = inserting a Network node. Describe constraints that must be held
+      \item Partitioning = modifying inputs to Network nodes.
+      \item Naive optimization (decouple and partition as much as possible, then fuse) is suboptimal, show example.
+        There is no optimal order.
+        Decoupling and partitioning are intertwined.
+      \item Encoding decoupling and partitioning constraints in ILP.
     \end{enumerate}
   \item Evaluation
-  \item 
+    \begin{enumerate}
+      \item General efficacy: Show results on Paxos (with replicas), Paxos (no replicas), distributed CAS, AWS chain replication, AWS strongly consistent secondary indices, Apache Flink workloads, maybe lobsters or websubmit.
+        Show different distribution of reads/writes for CAS and strongly consistent indices.
+        Discuss optimizations that were applied to each one, and how long it took to arrive at the optimal protocol.
+        Show numbers from our prior work on Paxos.
+      \item Case study: AWS chain replication. (For all following sections, just show breakdown of chain replication, but still briefly discuss other protocols and why certain techniques are more or less helpful for them.)
+      \item Time partitioning: Show performance of different time partitioning mechanisms.
+      \item General decoupling: Show that staleness is ok between learning that a value has been committed and leader re-election (and updating the local config).
+    \end{enumerate}
+  \item Related work
+  \item Conclusion
 \end{enumerate}
